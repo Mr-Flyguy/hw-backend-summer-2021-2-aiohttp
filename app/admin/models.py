@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 
@@ -5,4 +7,4 @@ from dataclasses import dataclass
 class Admin:
     id: int
     email: str
-    password: str | None = None
+    password_hash: str

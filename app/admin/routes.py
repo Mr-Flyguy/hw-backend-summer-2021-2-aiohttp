@@ -1,13 +1,10 @@
-import typing
+from __future__ import annotations
 
-from app.admin.views import AdminCurrentView
+from aiohttp import web
 
-if typing.TYPE_CHECKING:
-    from app.web.app import Application
+from app.admin.views import AdminLoginView, AdminCurrentView
 
 
-def setup_routes(app: "Application"):
-    from app.admin.views import AdminLoginView
-
+def setup_routes(app: web.Application):
     app.router.add_view("/admin.login", AdminLoginView)
     app.router.add_view("/admin.current", AdminCurrentView)

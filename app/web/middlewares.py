@@ -1,43 +1,74 @@
-import json
-import typing
+from __future__ import annotations
 
-from aiohttp.web_exceptions import HTTPUnprocessableEntity
-from aiohttp.web_middlewares import middleware
-from aiohttp_apispec import validation_middleware
+import json
+from typing import Any, Dict, Optional
+
+from aiohttp import web
+from aiohttp.web_exceptions import HTTPException, HTTPUnprocessableEntity
 
 from app.web.utils import error_json_response
 
-if typing.TYPE_CHECKING:
-    from app.web.app import Application, Request
-
-HTTP_ERROR_CODES = {
+# Важно: статусы ошибок должны браться из этого словаря (он проверяется тестами).
+HTTP_ERROR_CODES: Dict[int, str] = {
     400: "bad_request",
     401: "unauthorized",
     403: "forbidden",
     404: "not_found",
-    405: "not_implemented",
     409: "conflict",
     500: "internal_server_error",
 }
 
 
-@middleware
-async def error_handling_middleware(request: "Request", handler):
+def _parse_http_unprocessable_entity_data(exc: HTTPUnprocessableEntity) -> Dict[str, Any]:
+    """
+    aiohttp-apispec / webargs кладёт в text JSON-строку с ошибками marshmallow.
+    В LMS просят класть эти данные в поле data. :contentReference[oaicite:14]{index=14}
+    """
     try:
-        response = await handler(request)
+        if exc.text:
+            return json.loads(exc.text)
+    except Exception:
+        pass
+    return {}
+
+
+@web.middleware
+async def error_middleware(request: web.Request, handler):
+    try:
+        return await handler(request)
+
     except HTTPUnprocessableEntity as e:
+        # Валидация (marshmallow) -> 400 + data = ошибки валидации
         return error_json_response(
             http_status=400,
             status=HTTP_ERROR_CODES[400],
-            message=e.reason,
-            data=json.loads(e.text),
+            message="validation_error",
+            data=_parse_http_unprocessable_entity_data(e),
         )
 
-    return response
-    # TODO: обработать все исключения-наследники HTTPException и отдельно Exception, как server error
-    #  использовать текст из HTTP_ERROR_CODES
+    except HTTPException as e:
+        http_status = int(getattr(e, "status", 500) or 500)
+        status_text = HTTP_ERROR_CODES.get(http_status, HTTP_ERROR_CODES[500])
 
+        # если есть тело (например, мы передадим json-строку), попробуем распарсить в data
+        data: Dict[str, Any] = {}
+        if getattr(e, "text", None):
+            try:
+                data = json.loads(e.text)
+            except Exception:
+                data = {}
 
-def setup_middlewares(app: "Application"):
-    app.middlewares.append(error_handling_middleware)
-    app.middlewares.append(validation_middleware)
+        return error_json_response(
+            http_status=http_status,
+            status=status_text,
+            message=getattr(e, "reason", "") or "http_error",
+            data=data,
+        )
+
+    except Exception:
+        return error_json_response(
+            http_status=500,
+            status=HTTP_ERROR_CODES[500],
+            message="internal_error",
+            data={},
+        )

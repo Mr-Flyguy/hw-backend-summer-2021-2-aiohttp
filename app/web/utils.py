@@ -1,23 +1,38 @@
-from aiohttp.web import json_response as aiohttp_json_response
-from aiohttp.web_response import Response
+from __future__ import annotations
+
+from typing import Any, Mapping, Optional
+
+from aiohttp import web
 
 
-def json_response(data: dict | None = None, status: str = "ok") -> Response:
-    if data is None:
-        data = {}
-
-    return aiohttp_json_response(
-        data={
-            "status": status,
-            "data": data,
-        }
-    )
+def json_response(
+    data: Any,
+    *,
+    status: int = 200,
+    dumps=None,
+) -> web.Response:
+    # маленький хелпер, чтобы было единообразно
+    return web.json_response(data, status=status, dumps=dumps)
 
 
 def error_json_response(
+    *,
     http_status: int,
-    status: str = "error",
-    message: str | None = None,
-    data: dict | None = None,
-):
-    raise NotImplementedError
+    status: str,
+    message: str = "error",
+    data: Optional[Mapping[str, Any]] = None,
+) -> web.Response:
+    """
+    Единый формат ошибок по LMS:
+    {
+      "status": "...",
+      "message": "...",
+      "data": {...}
+    }
+    """
+    payload = {
+        "status": status,
+        "message": message,
+        "data": data or {},
+    }
+    return web.json_response(payload, status=http_status)
